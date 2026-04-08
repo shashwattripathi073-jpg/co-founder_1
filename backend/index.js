@@ -6,19 +6,10 @@ require('dotenv').config();
 
 // Import routers
 const UserRouter = require('./routers/userRouter');
-const StartupRouter = require('./routers/startupRouter');
-const CollaborationRouter = require('./routers/collaborationRouter');
-const MessageRouter = require('./routers/messageRouter');
-const MatchRouter = require('./routers/matchRouter');
-const FeedbackRouter = require('./routers/feedbackRouter');
-const AdminRouter = require('./routers/adminRouter');
-const ReportRouter = require('./routers/reportRouter');
-
-// Import message model for socket
-const Message = require('./models/messageModel');
+const cors = require('cors');
 
 const app = express();
-const server = http.createServer(app);
+
 const port = 5000;
 
 // Middleware
