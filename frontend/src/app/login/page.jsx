@@ -2,32 +2,69 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useFormik } from "formik";
+import * as Yup from "yup";
+import { useAuth } from "../../context/AuthContext";
+
+/* ==================  Yup Validation Schema  ================== */
+const loginSchema = Yup.object({
+  email: Yup.string()
+    .email("Please enter a valid email address")
+    .required("Email is required"),
+  password: Yup.string()
+    .min(6, "Password must be at least 6 characters")
+    .required("Password is required"),
+  rememberMe: Yup.boolean(),
+});
 
 export default function LoginPage() {
-  const [form, setForm] = useState({ email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState({});
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+  const { login } = useAuth();
+  const router = useRouter();
 
-  const validate = () => {
-    const errs = {};
-    if (!form.email.trim()) errs.email = "Email is required";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
-      errs.email = "Enter a valid email";
-    if (!form.password) errs.password = "Password is required";
-    else if (form.password.length < 6)
-      errs.password = "Must be at least 6 characters";
-    return errs;
-  };
+  const formik = useFormik({
+    initialValues: {
+      email: "",
+      password: "",
+      rememberMe: false,
+    },
+    validationSchema: loginSchema,
+    validateOnChange: true,
+    validateOnBlur: true,
+    onSubmit: async (values, { setSubmitting, setStatus }) => {
+      try {
+        setStatus(null);
+        await login(values.email, values.password);
+        setSubmitSuccess(true);
+        setTimeout(() => router.push("/dashboard"), 1000);
+      } catch (err) {
+        const msg = err?.response?.data?.message || "Invalid email or password. Please try again.";
+        setStatus(msg);
+      } finally {
+        setSubmitting(false);
+      }
+    },
+  });
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const errs = validate();
-    setErrors(errs);
-    if (Object.keys(errs).length > 0) return;
-    setLoading(true);
-    setTimeout(() => setLoading(false), 1500);
-  };
+  // Helper: show error only if field was touched
+  const fieldError = (name) =>
+    formik.touched[name] && formik.errors[name] ? formik.errors[name] : null;
+
+  const fieldStyle = (name) => ({
+    ...styles.input,
+    borderColor: fieldError(name)
+      ? "#f43f5e"
+      : formik.touched[name] && !formik.errors[name]
+      ? "rgba(16,185,129,0.4)"
+      : "var(--border-subtle)",
+    boxShadow: fieldError(name)
+      ? "0 0 0 3px rgba(244,63,94,0.08)"
+      : formik.touched[name] && !formik.errors[name]
+      ? "0 0 0 3px rgba(16,185,129,0.08)"
+      : "none",
+  });
 
   return (
     <div style={styles.page}>
@@ -36,10 +73,8 @@ export default function LoginPage() {
       <div className="bg-orb animate-blob animation-delay-2000" style={{ width: 360, height: 360, background: "rgba(236,72,153,0.10)", bottom: "0%", right: "-4%" }} />
       <div className="bg-orb animate-blob animation-delay-4000" style={{ width: 280, height: 280, background: "rgba(139,92,246,0.09)", top: "50%", left: "60%" }} />
 
-      {/* Grid overlay */}
       <div style={styles.gridOverlay} />
 
-      {/* Content */}
       <div style={styles.container}>
         {/* Left — Branding panel */}
         <div style={styles.brandPanel} className="brand-panel">
@@ -107,7 +142,7 @@ export default function LoginPage() {
           <div style={styles.formHeader}>
             <h2 style={styles.formTitle}>Log In</h2>
             <p style={styles.formSubtitle}>
-              Don't have an account?{" "}
+              Don&apos;t have an account?{" "}
               <Link href="/signup" style={styles.link}>
                 Sign up free →
               </Link>
@@ -140,8 +175,24 @@ export default function LoginPage() {
             <div style={styles.dividerLine} />
           </div>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} style={styles.form}>
+          {/* Success message */}
+          {submitSuccess && (
+            <div style={styles.successBanner}>
+              <span style={{ fontSize: 18 }}>✅</span>
+              <span>Login successful! Redirecting...</span>
+            </div>
+          )}
+
+          {/* Server error message */}
+          {formik.status && (
+            <div style={styles.errorBanner}>
+              <span style={{ fontSize: 16 }}>⚠️</span>
+              <span>{formik.status}</span>
+            </div>
+          )}
+
+          {/* Formik Form */}
+          <form onSubmit={formik.handleSubmit} style={styles.form} noValidate>
             {/* Email */}
             <div style={styles.fieldGroup}>
               <label style={styles.label} htmlFor="login-email">Email Address</label>
@@ -149,17 +200,21 @@ export default function LoginPage() {
                 <span style={styles.inputIcon}>✉</span>
                 <input
                   id="login-email"
+                  name="email"
                   type="email"
                   placeholder="you@university.edu"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  style={{
-                    ...styles.input,
-                    borderColor: errors.email ? "#f43f5e" : "var(--border-subtle)",
-                  }}
+                  value={formik.values.email}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                  style={fieldStyle("email")}
                 />
+                {formik.touched.email && !formik.errors.email && (
+                  <span style={styles.validIcon}>✓</span>
+                )}
               </div>
-              {errors.email && <span style={styles.error}>{errors.email}</span>}
+              {fieldError("email") && (
+                <span style={styles.error}>{fieldError("email")}</span>
+              )}
             </div>
 
             {/* Password */}
@@ -172,14 +227,13 @@ export default function LoginPage() {
                 <span style={styles.inputIcon}>🔒</span>
                 <input
                   id="login-password"
+                  name="password"
                   type={showPassword ? "text" : "password"}
                   placeholder="••••••••"
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  style={{
-                    ...styles.input,
-                    borderColor: errors.password ? "#f43f5e" : "var(--border-subtle)",
-                  }}
+                  value={formik.values.password}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                  style={fieldStyle("password")}
                 />
                 <button
                   type="button"
@@ -190,13 +244,21 @@ export default function LoginPage() {
                   {showPassword ? "🙈" : "👁"}
                 </button>
               </div>
-              {errors.password && <span style={styles.error}>{errors.password}</span>}
+              {fieldError("password") && (
+                <span style={styles.error}>{fieldError("password")}</span>
+              )}
             </div>
 
             {/* Remember me */}
             <div style={styles.rememberRow}>
               <label style={styles.checkbox}>
-                <input type="checkbox" style={{ accentColor: "#6366f1" }} />
+                <input
+                  type="checkbox"
+                  name="rememberMe"
+                  checked={formik.values.rememberMe}
+                  onChange={formik.handleChange}
+                  style={{ accentColor: "#6366f1" }}
+                />
                 <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Remember me</span>
               </label>
             </div>
@@ -205,17 +267,17 @@ export default function LoginPage() {
             <button
               type="submit"
               className="btn-primary"
-              disabled={loading}
+              disabled={formik.isSubmitting}
               style={{
                 width: "100%",
                 justifyContent: "center",
                 padding: "15px 0",
                 fontSize: 15,
-                opacity: loading ? 0.7 : 1,
-                cursor: loading ? "wait" : "pointer",
+                opacity: formik.isSubmitting ? 0.7 : 1,
+                cursor: formik.isSubmitting ? "wait" : "pointer",
               }}
             >
-              {loading ? (
+              {formik.isSubmitting ? (
                 <span style={styles.spinner} />
               ) : (
                 <>Log In <span style={{ fontSize: 18 }}>→</span></>
@@ -285,7 +347,6 @@ const styles = {
     boxShadow: "0 25px 60px rgba(0,0,0,0.4)",
   },
 
-  /* ---- Brand Panel ---- */
   brandPanel: {
     flex: "0 0 44%",
     padding: "48px 40px",
@@ -362,7 +423,6 @@ const styles = {
     color: "var(--text-tertiary)",
   },
 
-  /* ---- Form Panel ---- */
   formPanel: {
     flex: 1,
     padding: "48px 44px",
@@ -400,7 +460,6 @@ const styles = {
     transition: "color 0.2s",
   },
 
-  /* Social buttons */
   socialRow: {
     display: "flex",
     gap: 12,
@@ -424,7 +483,6 @@ const styles = {
     transition: "all 0.25s",
   },
 
-  /* Divider */
   divider: {
     display: "flex",
     alignItems: "center",
@@ -444,7 +502,6 @@ const styles = {
     whiteSpace: "nowrap",
   },
 
-  /* Form fields */
   form: {
     display: "flex",
     flexDirection: "column",
@@ -486,6 +543,17 @@ const styles = {
     opacity: 0.5,
   },
 
+  validIcon: {
+    position: "absolute",
+    right: 14,
+    top: "50%",
+    transform: "translateY(-50%)",
+    fontSize: 14,
+    color: "#34d399",
+    fontWeight: 700,
+    pointerEvents: "none",
+  },
+
   eyeBtn: {
     position: "absolute",
     right: 12,
@@ -503,6 +571,37 @@ const styles = {
     fontSize: 12,
     color: "#f43f5e",
     marginTop: 2,
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+  },
+
+  successBanner: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "12px 16px",
+    borderRadius: "var(--radius-md)",
+    background: "rgba(16,185,129,0.1)",
+    border: "1px solid rgba(16,185,129,0.25)",
+    color: "#34d399",
+    fontSize: 14,
+    fontWeight: 500,
+    marginBottom: 16,
+  },
+
+  errorBanner: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "12px 16px",
+    borderRadius: "var(--radius-md)",
+    background: "rgba(244,63,94,0.08)",
+    border: "1px solid rgba(244,63,94,0.2)",
+    color: "#f43f5e",
+    fontSize: 14,
+    fontWeight: 500,
+    marginBottom: 16,
   },
 
   rememberRow: {

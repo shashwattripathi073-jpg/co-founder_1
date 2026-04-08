@@ -2,6 +2,12 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useFormik } from "formik";
+import * as Yup from "yup";
+import { useAuth } from "../../context/AuthContext";
+
+/* ==================  Constants  ================== */
 
 const ROLE_OPTIONS = [
   {
@@ -20,59 +26,118 @@ const ROLE_OPTIONS = [
   },
 ];
 
+/* ==================  Yup Validation Schema  ================== */
+
+const signupSchema = Yup.object({
+  name: Yup.string()
+    .trim()
+    .min(2, "Name must be at least 2 characters")
+    .max(60, "Name must be 60 characters or less")
+    .matches(/^[a-zA-Z\s.'-]+$/, "Name can only contain letters, spaces, dots and hyphens")
+    .required("Full name is required"),
+
+  email: Yup.string()
+    .email("Please enter a valid email address")
+    .required("Email is required"),
+
+  university: Yup.string()
+    .trim()
+    .min(2, "University name must be at least 2 characters")
+    .max(100, "University name is too long")
+    .required("University / College is required"),
+
+  password: Yup.string()
+    .min(8, "Password must be at least 8 characters")
+    .matches(/[A-Z]/, "Must contain at least one uppercase letter")
+    .matches(/[0-9]/, "Must contain at least one number")
+    .matches(/[^A-Za-z0-9]/, "Must contain at least one special character (!@#$%...)")
+    .required("Password is required"),
+
+  confirmPassword: Yup.string()
+    .oneOf([Yup.ref("password")], "Passwords do not match")
+    .required("Please confirm your password"),
+
+  agreed: Yup.boolean()
+    .oneOf([true], "You must agree to the Terms & Privacy Policy"),
+});
+
+/* ==================  Password Strength  ================== */
+
+function getStrength(pw) {
+  if (!pw) return 0;
+  let s = 0;
+  if (pw.length >= 8) s++;
+  if (/[A-Z]/.test(pw)) s++;
+  if (/[0-9]/.test(pw)) s++;
+  if (/[^A-Za-z0-9]/.test(pw)) s++;
+  return s;
+}
+
+const strengthLabels = ["", "Weak", "Fair", "Good", "Strong"];
+const strengthColors = ["", "#f43f5e", "#f59e0b", "#10b981", "#6366f1"];
+
+/* ==================  Component  ================== */
+
 export default function SignupPage() {
-  const [step, setStep] = useState(1); // 1 = role pick, 2 = details form
+  const [step, setStep] = useState(1);
   const [role, setRole] = useState("");
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    university: "",
-    password: "",
-    confirmPassword: "",
-  });
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState({});
-  const [agreed, setAgreed] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+  const { register } = useAuth();
+  const router = useRouter();
 
-  const validate = () => {
-    const errs = {};
-    if (!form.name.trim()) errs.name = "Full name is required";
-    if (!form.email.trim()) errs.email = "Email is required";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
-      errs.email = "Enter a valid email";
-    if (!form.university.trim()) errs.university = "University is required";
-    if (!form.password) errs.password = "Password is required";
-    else if (form.password.length < 8)
-      errs.password = "Must be at least 8 characters";
-    if (form.password !== form.confirmPassword)
-      errs.confirmPassword = "Passwords don't match";
-    if (!agreed) errs.agreed = "You must agree to the terms";
-    return errs;
-  };
+  const formik = useFormik({
+    initialValues: {
+      name: "",
+      email: "",
+      university: "",
+      password: "",
+      confirmPassword: "",
+      agreed: false,
+    },
+    validationSchema: signupSchema,
+    validateOnChange: true,
+    validateOnBlur: true,
+    onSubmit: async (values, { setSubmitting, setStatus }) => {
+      try {
+        setStatus(null);
+        await register({
+          name: values.name,
+          email: values.email,
+          password: values.password,
+          university: values.university,
+          role,
+        });
+        setSubmitSuccess(true);
+        setTimeout(() => router.push("/profile"), 1200);
+      } catch (err) {
+        const msg = err?.response?.data?.message || "Something went wrong. Please try again.";
+        setStatus(msg);
+      } finally {
+        setSubmitting(false);
+      }
+    },
+  });
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const errs = validate();
-    setErrors(errs);
-    if (Object.keys(errs).length > 0) return;
-    setLoading(true);
-    setTimeout(() => setLoading(false), 1500);
-  };
+  const strength = getStrength(formik.values.password);
 
-  /* Password strength */
-  const getStrength = (pw) => {
-    let s = 0;
-    if (pw.length >= 8) s++;
-    if (/[A-Z]/.test(pw)) s++;
-    if (/[0-9]/.test(pw)) s++;
-    if (/[^A-Za-z0-9]/.test(pw)) s++;
-    return s;
-  };
+  // Helper: show error only when touched
+  const fieldError = (name) =>
+    formik.touched[name] && formik.errors[name] ? formik.errors[name] : null;
 
-  const strength = getStrength(form.password);
-  const strengthLabels = ["", "Weak", "Fair", "Good", "Strong"];
-  const strengthColors = ["", "#f43f5e", "#f59e0b", "#10b981", "#6366f1"];
+  const fieldStyle = (name) => ({
+    ...styles.input,
+    borderColor: fieldError(name)
+      ? "#f43f5e"
+      : formik.touched[name] && !formik.errors[name]
+      ? "rgba(16,185,129,0.4)"
+      : "var(--border-subtle)",
+    boxShadow: fieldError(name)
+      ? "0 0 0 3px rgba(244,63,94,0.08)"
+      : formik.touched[name] && !formik.errors[name]
+      ? "0 0 0 3px rgba(16,185,129,0.08)"
+      : "none",
+  });
 
   return (
     <div style={styles.page}>
@@ -267,7 +332,7 @@ export default function SignupPage() {
               </button>
             </div>
           ) : (
-            /* ==================  STEP 2 — Details form  ================== */
+            /* ==================  STEP 2 — Details form (Formik)  ================== */
             <div className="animate-fade-in" style={{ animationDuration: "0.4s" }}>
               <div style={styles.formHeader}>
                 <button
@@ -291,7 +356,23 @@ export default function SignupPage() {
                 </p>
               </div>
 
-              <form onSubmit={handleSubmit} style={styles.form}>
+              {/* Success message */}
+              {submitSuccess && (
+                <div style={styles.successBanner}>
+                  <span style={{ fontSize: 18 }}>🎉</span>
+                  <span>Account created successfully! Welcome to CoFounder.</span>
+                </div>
+              )}
+
+              {/* Server error */}
+              {formik.status && (
+                <div style={styles.errorBanner}>
+                  <span style={{ fontSize: 16 }}>⚠️</span>
+                  <span>{formik.status}</span>
+                </div>
+              )}
+
+              <form onSubmit={formik.handleSubmit} style={styles.form} noValidate>
                 {/* Full name */}
                 <div style={styles.fieldGroup}>
                   <label style={styles.label} htmlFor="signup-name">Full Name</label>
@@ -299,17 +380,21 @@ export default function SignupPage() {
                     <span style={styles.inputIcon}>👤</span>
                     <input
                       id="signup-name"
+                      name="name"
                       type="text"
                       placeholder="Arjun Mehta"
-                      value={form.name}
-                      onChange={(e) => setForm({ ...form, name: e.target.value })}
-                      style={{
-                        ...styles.input,
-                        borderColor: errors.name ? "#f43f5e" : "var(--border-subtle)",
-                      }}
+                      value={formik.values.name}
+                      onChange={formik.handleChange}
+                      onBlur={formik.handleBlur}
+                      style={fieldStyle("name")}
                     />
+                    {formik.touched.name && !formik.errors.name && (
+                      <span style={styles.validIcon}>✓</span>
+                    )}
                   </div>
-                  {errors.name && <span style={styles.error}>{errors.name}</span>}
+                  {fieldError("name") && (
+                    <span style={styles.error}>{fieldError("name")}</span>
+                  )}
                 </div>
 
                 {/* Email */}
@@ -319,17 +404,21 @@ export default function SignupPage() {
                     <span style={styles.inputIcon}>✉</span>
                     <input
                       id="signup-email"
+                      name="email"
                       type="email"
                       placeholder="you@university.edu"
-                      value={form.email}
-                      onChange={(e) => setForm({ ...form, email: e.target.value })}
-                      style={{
-                        ...styles.input,
-                        borderColor: errors.email ? "#f43f5e" : "var(--border-subtle)",
-                      }}
+                      value={formik.values.email}
+                      onChange={formik.handleChange}
+                      onBlur={formik.handleBlur}
+                      style={fieldStyle("email")}
                     />
+                    {formik.touched.email && !formik.errors.email && (
+                      <span style={styles.validIcon}>✓</span>
+                    )}
                   </div>
-                  {errors.email && <span style={styles.error}>{errors.email}</span>}
+                  {fieldError("email") && (
+                    <span style={styles.error}>{fieldError("email")}</span>
+                  )}
                 </div>
 
                 {/* University */}
@@ -339,19 +428,21 @@ export default function SignupPage() {
                     <span style={styles.inputIcon}>🎓</span>
                     <input
                       id="signup-university"
+                      name="university"
                       type="text"
                       placeholder="IIT Delhi"
-                      value={form.university}
-                      onChange={(e) =>
-                        setForm({ ...form, university: e.target.value })
-                      }
-                      style={{
-                        ...styles.input,
-                        borderColor: errors.university ? "#f43f5e" : "var(--border-subtle)",
-                      }}
+                      value={formik.values.university}
+                      onChange={formik.handleChange}
+                      onBlur={formik.handleBlur}
+                      style={fieldStyle("university")}
                     />
+                    {formik.touched.university && !formik.errors.university && (
+                      <span style={styles.validIcon}>✓</span>
+                    )}
                   </div>
-                  {errors.university && <span style={styles.error}>{errors.university}</span>}
+                  {fieldError("university") && (
+                    <span style={styles.error}>{fieldError("university")}</span>
+                  )}
                 </div>
 
                 {/* Password */}
@@ -361,16 +452,13 @@ export default function SignupPage() {
                     <span style={styles.inputIcon}>🔒</span>
                     <input
                       id="signup-password"
+                      name="password"
                       type={showPassword ? "text" : "password"}
                       placeholder="Min 8 characters"
-                      value={form.password}
-                      onChange={(e) =>
-                        setForm({ ...form, password: e.target.value })
-                      }
-                      style={{
-                        ...styles.input,
-                        borderColor: errors.password ? "#f43f5e" : "var(--border-subtle)",
-                      }}
+                      value={formik.values.password}
+                      onChange={formik.handleChange}
+                      onBlur={formik.handleBlur}
+                      style={fieldStyle("password")}
                     />
                     <button
                       type="button"
@@ -381,8 +469,9 @@ export default function SignupPage() {
                       {showPassword ? "🙈" : "👁"}
                     </button>
                   </div>
+
                   {/* Strength meter */}
-                  {form.password && (
+                  {formik.values.password && (
                     <div style={{ marginTop: 6 }}>
                       <div style={styles.strengthTrack}>
                         {[1, 2, 3, 4].map((i) => (
@@ -401,12 +490,42 @@ export default function SignupPage() {
                           />
                         ))}
                       </div>
-                      <span style={{ fontSize: 11, color: strengthColors[strength], fontWeight: 500 }}>
-                        {strengthLabels[strength]}
-                      </span>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 11, color: strengthColors[strength], fontWeight: 500 }}>
+                          {strengthLabels[strength]}
+                        </span>
+                        {/* Password requirement checklist */}
+                        <div style={{ display: "flex", gap: 6 }}>
+                          {[
+                            { test: formik.values.password.length >= 8, label: "8+" },
+                            { test: /[A-Z]/.test(formik.values.password), label: "A-Z" },
+                            { test: /[0-9]/.test(formik.values.password), label: "0-9" },
+                            { test: /[^A-Za-z0-9]/.test(formik.values.password), label: "!@#" },
+                          ].map((req) => (
+                            <span
+                              key={req.label}
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 600,
+                                padding: "1px 5px",
+                                borderRadius: 4,
+                                background: req.test ? "rgba(16,185,129,0.12)" : "rgba(255,255,255,0.04)",
+                                color: req.test ? "#34d399" : "var(--text-tertiary)",
+                                border: `1px solid ${req.test ? "rgba(16,185,129,0.25)" : "var(--border-subtle)"}`,
+                                transition: "all 0.2s",
+                              }}
+                            >
+                              {req.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   )}
-                  {errors.password && <span style={styles.error}>{errors.password}</span>}
+
+                  {fieldError("password") && (
+                    <span style={styles.error}>{fieldError("password")}</span>
+                  )}
                 </div>
 
                 {/* Confirm password */}
@@ -416,57 +535,62 @@ export default function SignupPage() {
                     <span style={styles.inputIcon}>🔒</span>
                     <input
                       id="signup-confirm"
+                      name="confirmPassword"
                       type="password"
                       placeholder="Re-enter password"
-                      value={form.confirmPassword}
-                      onChange={(e) =>
-                        setForm({ ...form, confirmPassword: e.target.value })
-                      }
-                      style={{
-                        ...styles.input,
-                        borderColor: errors.confirmPassword ? "#f43f5e" : "var(--border-subtle)",
-                      }}
+                      value={formik.values.confirmPassword}
+                      onChange={formik.handleChange}
+                      onBlur={formik.handleBlur}
+                      style={fieldStyle("confirmPassword")}
                     />
-                    {form.confirmPassword && form.password === form.confirmPassword && (
-                      <span style={{ ...styles.eyeBtn, pointerEvents: "none" }}>✅</span>
-                    )}
+                    {formik.touched.confirmPassword &&
+                      !formik.errors.confirmPassword &&
+                      formik.values.confirmPassword && (
+                        <span style={styles.validIcon}>✓</span>
+                      )}
                   </div>
-                  {errors.confirmPassword && (
-                    <span style={styles.error}>{errors.confirmPassword}</span>
+                  {fieldError("confirmPassword") && (
+                    <span style={styles.error}>{fieldError("confirmPassword")}</span>
                   )}
                 </div>
 
-                {/* Agree */}
-                <label style={styles.checkbox}>
-                  <input
-                    type="checkbox"
-                    checked={agreed}
-                    onChange={(e) => setAgreed(e.target.checked)}
-                    style={{ accentColor: "#6366f1" }}
-                  />
-                  <span style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                    I agree to the{" "}
-                    <a href="#" style={styles.link}>Terms of Service</a> and{" "}
-                    <a href="#" style={styles.link}>Privacy Policy</a>
-                  </span>
-                </label>
-                {errors.agreed && <span style={styles.error}>{errors.agreed}</span>}
+                {/* Agree to terms */}
+                <div style={styles.fieldGroup}>
+                  <label style={styles.checkbox}>
+                    <input
+                      type="checkbox"
+                      name="agreed"
+                      checked={formik.values.agreed}
+                      onChange={formik.handleChange}
+                      onBlur={formik.handleBlur}
+                      style={{ accentColor: "#6366f1" }}
+                    />
+                    <span style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                      I agree to the{" "}
+                      <a href="#" style={styles.link}>Terms of Service</a> and{" "}
+                      <a href="#" style={styles.link}>Privacy Policy</a>
+                    </span>
+                  </label>
+                  {fieldError("agreed") && (
+                    <span style={styles.error}>{fieldError("agreed")}</span>
+                  )}
+                </div>
 
                 {/* Submit */}
                 <button
                   type="submit"
                   className="btn-primary"
-                  disabled={loading}
+                  disabled={formik.isSubmitting}
                   style={{
                     width: "100%",
                     justifyContent: "center",
                     padding: "15px 0",
                     fontSize: 15,
-                    opacity: loading ? 0.7 : 1,
-                    cursor: loading ? "wait" : "pointer",
+                    opacity: formik.isSubmitting ? 0.7 : 1,
+                    cursor: formik.isSubmitting ? "wait" : "pointer",
                   }}
                 >
-                  {loading ? (
+                  {formik.isSubmitting ? (
                     <span style={styles.spinner} />
                   ) : (
                     <>Create Account <span style={{ fontSize: 18 }}>→</span></>
@@ -536,7 +660,6 @@ const styles = {
     boxShadow: "0 25px 60px rgba(0,0,0,0.4)",
   },
 
-  /* ---- Brand Panel ---- */
   brandPanel: {
     flex: "0 0 44%",
     padding: "48px 40px",
@@ -616,7 +739,6 @@ const styles = {
     color: "var(--text-tertiary)",
   },
 
-  /* ---- Form Panel ---- */
   formPanel: {
     flex: 1,
     padding: "40px 44px",
@@ -692,7 +814,6 @@ const styles = {
     transition: "color 0.2s",
   },
 
-  /* Role selector */
   roleGrid: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
@@ -710,7 +831,6 @@ const styles = {
     fontFamily: "inherit",
   },
 
-  /* Social buttons */
   socialRow: {
     display: "flex",
     gap: 12,
@@ -753,7 +873,6 @@ const styles = {
     whiteSpace: "nowrap",
   },
 
-  /* Form fields */
   form: {
     display: "flex",
     flexDirection: "column",
@@ -795,6 +914,17 @@ const styles = {
     opacity: 0.5,
   },
 
+  validIcon: {
+    position: "absolute",
+    right: 14,
+    top: "50%",
+    transform: "translateY(-50%)",
+    fontSize: 14,
+    color: "#34d399",
+    fontWeight: 700,
+    pointerEvents: "none",
+  },
+
   eyeBtn: {
     position: "absolute",
     right: 12,
@@ -812,6 +942,37 @@ const styles = {
     fontSize: 12,
     color: "#f43f5e",
     marginTop: 2,
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+  },
+
+  successBanner: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "12px 16px",
+    borderRadius: "var(--radius-md)",
+    background: "rgba(16,185,129,0.1)",
+    border: "1px solid rgba(16,185,129,0.25)",
+    color: "#34d399",
+    fontSize: 14,
+    fontWeight: 500,
+    marginBottom: 16,
+  },
+
+  errorBanner: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "12px 16px",
+    borderRadius: "var(--radius-md)",
+    background: "rgba(244,63,94,0.08)",
+    border: "1px solid rgba(244,63,94,0.2)",
+    color: "#f43f5e",
+    fontSize: 14,
+    fontWeight: 500,
+    marginBottom: 16,
   },
 
   strengthTrack: {
